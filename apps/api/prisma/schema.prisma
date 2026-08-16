@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Todo {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("todos")
+}
+
+
+enum Role {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+
+model User{
+  id                          String            @id @default(uuid())
+  email                       String            @unique
+  password                    String
+  firstName                    String
+  lastName                    String
+  isActive                    Boolean           @default(true)
+  role                        Role              @default(CUSTOMER)
+  createdAt                   DateTime          @default(now())
+  updatedAt                   DateTime          @updatedAt
+
+  // Tickets created/requested for this user
+  customerTickets             Ticket[]          @relation("TicketCustomer")
+
+  // Tickets assigned to this user.
+  assignedTickets             Ticket[]          @relation("TicketAgent")
+
+  // Ticket assigned by
+  assignedTicketByUserId      Ticket[]          @relation("TicketAssignedByUser")
+
+
+  // Author Ticket Comment
+  commentsTicket              TicketComment[]   @relation("TicketAuthorComment")
+
+
+  userIdHistory               TicketHistory[]   @relation("TicketHistoryUser")
+
+
+  @@map("users")
+}
+
+
+enum TicketStatus {
+  NEW
+  OPEN
+  IN_PROGRESS
+  ON_HOLD
+  WAITING_FOR_CUSTOMER
+  WAITING_FOR_THIRD_PARTY
+  PENDING
+  RESOLVED
+  CLOSED
+  CANCELLED
+  REOPENED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model TicketComment{
+  id                  String              @id @default(uuid())
+  content             String
+
+  // Ticket Relation
+  ticketId            String
+  ticket              Ticket              @relation("TicketCommentRelation", fields: [ticketId], references: [id])
+
+  // User author relation
+  authorId            String
+  author              User               @relation("TicketAuthorComment", fields: [authorId], references: [id])
+
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@map("tickets_comments")
+}
+
+
+
+
+model Ticket {
+  id              String              @id @default(uuid())
+  ticketNumber    String
+  title           String
+  description     String
+  status          TicketStatus        @default(NEW)
+  priority        TicketPriority      @default(LOW)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  assignedAt      DateTime?
+
+
+
+  // Relations
+  // User
+  customerId          String
+  customer            User              @relation("TicketCustomer", fields: [customerId],references: [id])
+  // Agent
+  agentId             String?
+  agent               User?             @relation("TicketAgent", fields: [agentId],references: [id])
+
+
+  // Assign by
+  assignedByUserId    String?
+  user                User?             @relation("TicketAssignedByUser", fields: [assignedByUserId],references: [id])
+
+  // comments
+  comments            TicketComment[]    @relation("TicketCommentRelation")
+
+
+  // history
+  history             TicketHistory[]    @relation("TicketHistoryRelation")
+
+
+
+  @@index([customerId])
+  @@index([agentId])
+  @@map("tickets")
+}
+
+
+model TicketHistory {
+  id                  String                  @id @default(uuid())
+
+
+  // Ticket Relation
+  ticketId            String
+  ticket              Ticket              @relation("TicketHistoryRelation", fields: [ticketId], references: [id])
+
+
+  // Assign by
+  userIdHistory       String?
+  user                User?               @relation("TicketHistoryUser", fields: [userIdHistory],references: [id])
+
+  action              String
+  fromValue           String?
+  toValue             String?
+
+  createdAt           DateTime            @default(now())
+
+  @@index([ticketId])
+  @@index([userIdHistory])
+  @@map("ticket_history")
+}

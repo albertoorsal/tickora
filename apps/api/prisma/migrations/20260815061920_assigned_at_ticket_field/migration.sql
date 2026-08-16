@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "tickets" ADD COLUMN     "assignedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP;
