@@ -138,6 +138,8 @@ model Ticket {
 
   @@index([customerId])
   @@index([agentId])
+  @@index([status])
+  @@index([createdAt])
   @@map("tickets")
 }
 

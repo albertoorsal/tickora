@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma, TicketStatus } from 'src/generated/prisma';
 import { CreateTicketInput } from 'src/modules/tickets/dto/create-ticket.input';
 import { UpdateTicketInput } from 'src/modules/tickets/dto/update-ticket.input';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -15,7 +16,11 @@ import {
   TICKET_CREATED,
   TICKET_UPDATED,
 } from '../tickets/constants/actions';
-import { TicketStatus } from 'src/generated/prisma';
+import { TicketFilterInput } from 'src/modules/tickets/dto/ticket-filter.input';
+import {
+  assertCanView,
+  ticketScopeFor,
+} from 'src/modules/tickets/utils/ticket-access';
 
 @Injectable()
 export class TicketsService {
@@ -24,19 +29,32 @@ export class TicketsService {
     private readonly ticketHistoryService: TicketHistoryService,
   ) {}
 
-  async create(createTicketInput: CreateTicketInput) {
+  async create(createTicketInput: CreateTicketInput, currentUser: JwtPayload) {
+    // Customers always open tickets for themselves
+    const customerId =
+      currentUser.role === Role.CUSTOMER
+        ? currentUser.sub
+        : createTicketInput.customerId;
+
+    if (!customerId) {
+      throw new BadRequestException(
+        'customerId is required when creating a ticket on behalf of a customer',
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
       //1. Create ticket
       const ticketSaved = await tx.ticket.create({
         data: {
           ...createTicketInput,
+          customerId,
         },
       });
 
       // Add history creation
       const createTicketHistoryInput: CreateTicketHistoryInput = {
         ticketId: ticketSaved.id,
-        userIdHistory: ticketSaved.customerId,
+        userIdHistory: currentUser.sub,
         action: TICKET_CREATED,
         fromValue: ticketSaved.status,
       };
@@ -46,14 +64,38 @@ export class TicketsService {
     });
   }
 
-  findAll() {
-    return this.prisma.ticket.findMany();
+  async findAll(filter: TicketFilterInput, currentUser: JwtPayload) {
+    const {
+      skip = 0,
+      take = 20,
+      orderBy = 'createdAt',
+      orderDirection = 'desc',
+    } = filter;
+    const where: Prisma.TicketWhereInput = {
+      AND: [ticketScopeFor(currentUser), this.buildFilterWhere(filter)],
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.ticket.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { [orderBy]: orderDirection },
+      }),
+      this.prisma.ticket.count({ where }),
+    ]);
+
+    return { items, total, hasMore: skip + items.length < total };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, currentUser?: JwtPayload) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id } });
     if (!ticket) {
       throw new NotFoundException(`No ticket found with id ${id}`);
+    }
+
+    if (currentUser) {
+      assertCanView(ticket, currentUser);
     }
 
     return ticket;
@@ -64,7 +106,7 @@ export class TicketsService {
     updateTicketInput: UpdateTicketInput,
     currentUser: JwtPayload,
   ) {
-    const ticketFound = await this.findOne(id);
+    const ticketFound = await this.findOne(id, currentUser);
     const { id: _id, ...data } = updateTicketInput;
 
     return this.prisma.$transaction(async (tx) => {
@@ -90,7 +132,7 @@ export class TicketsService {
 
   async assignTicket(id: string, agentId: string, currentUser: JwtPayload) {
     const currentUserId = currentUser.sub;
-    const ticketFound = await this.findOne(id);
+    const ticketFound = await this.findOne(id, currentUser);
 
     const assignedAgent = await this.prisma.user.findUnique({
       where: { id: agentId },
@@ -138,7 +180,7 @@ export class TicketsService {
     newStatus: TicketStatus,
     currentUser: JwtPayload,
   ) {
-    const ticketFound = await this.findOne(id);
+    const ticketFound = await this.findOne(id, currentUser);
     const currentUserId = currentUser.sub;
     return this.prisma.$transaction(async (tx) => {
       // Change status
@@ -163,5 +205,36 @@ export class TicketsService {
 
       return ticketUpdate;
     });
+  }
+
+  private buildFilterWhere(filter: TicketFilterInput): Prisma.TicketWhereInput {
+    const where: Prisma.TicketWhereInput = {};
+
+    if (filter.status?.length) {
+      where.status = { in: filter.status };
+    }
+    if (filter.priority?.length) {
+      where.priority = { in: filter.priority };
+    }
+    if (filter.agentId) {
+      where.agentId = filter.agentId;
+    }
+    if (filter.customerId) {
+      where.customerId = filter.customerId;
+    }
+    if (filter.createdFrom || filter.createdTo) {
+      where.createdAt = { gte: filter.createdFrom, lte: filter.createdTo };
+    }
+
+    const search = filter.search?.trim();
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { ticketNumber: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    return where;
   }
 }

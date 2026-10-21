@@ -17,21 +17,10 @@ input CreateTicketCommentInput {
   ticketId: String!
 }
 
-input CreateTicketHistoryInput {
-  action: String!
-  fromValue: String!
-  ticketId: String!
-  toValue: String!
-  userIdHistory: String!
-}
-
 input CreateTicketInput {
-  agentId: String
-  assignedByUserId: String
-  customerId: String!
+  customerId: String
   description: String!
   priority: TicketPriority!
-  status: TicketStatus!
   ticketNumber: String!
   title: String!
 }
@@ -65,7 +54,6 @@ type Mutation {
   assignTicket(assignTicketAgent: AssignTicketAgent!): Ticket!
   changeTicketStatus(id: ID!, newStatus: TicketStatus!): Ticket!
   createTicket(createTicketInput: CreateTicketInput!): Ticket!
-  createTicketHistory(createTicketHistoryInput: CreateTicketHistoryInput!): TicketHistory!
   createTodo(createTodoInput: CreateTodoInput!): Todo!
   createUser(createUserInput: CreateUserInput!): User!
   login(loginInput: LoginInput!): AuthEntity!
@@ -81,12 +69,18 @@ type Mutation {
   updateUser(updateUserInput: UpdateUserInput!): User!
 }
 
+type PaginatedTickets {
+  hasMore: Boolean!
+  items: [Ticket!]!
+  total: Int!
+}
+
 type Query {
   me: User!
   ticket(id: ID!): Ticket!
   ticketHistory(ticketId: ID!): [TicketHistory!]!
   ticket_comments(ticketId: ID!): [TicketComments!]!
-  tickets: [Ticket!]!
+  tickets(filter: TicketFilterInput): PaginatedTickets!
   todo(id: ID!): Todo!
   todos: [Todo!]!
   user(id: ID!): User!
@@ -100,10 +94,15 @@ enum Role {
   CUSTOMER
 }
 
+enum SortDirection {
+  ASC
+  DESC
+}
+
 type Ticket {
   agent: User
   agentId: String
-  assignedAt: DateTime!
+  assignedAt: DateTime
   assignedByUserId: User
   createdAt: DateTime!
   customer: User!
@@ -128,6 +127,20 @@ type TicketComments {
   updatedAt: DateTime!
 }
 
+input TicketFilterInput {
+  agentId: String
+  createdFrom: DateTime
+  createdTo: DateTime
+  customerId: String
+  orderBy: TicketOrderField! = CREATED_AT
+  orderDirection: SortDirection! = DESC
+  priority: [TicketPriority!]
+  search: String
+  skip: Int! = 0
+  status: [TicketStatus!]
+  take: Int! = 20
+}
+
 type TicketHistory {
   action: String!
   createdAt: DateTime!
@@ -138,6 +151,12 @@ type TicketHistory {
   toValue: String
   user: User!
   userIdHistory: String!
+}
+
+enum TicketOrderField {
+  CREATED_AT
+  PRIORITY
+  UPDATED_AT
 }
 
 enum TicketPriority {
@@ -177,13 +196,9 @@ input UpdateTicketCommentInput {
 }
 
 input UpdateTicketInput {
-  agentId: String
-  assignedByUserId: String
-  customerId: String
   description: String
   id: ID!
   priority: TicketPriority
-  status: TicketStatus
   ticketNumber: String
   title: String
 }

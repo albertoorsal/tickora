@@ -20,6 +20,7 @@ import { UsersService } from 'src/modules/users/users.service';
 import { UpdateTicketCommentInput } from 'src/modules/tickets_comments/dto/update-ticket-comment.input';
 
 @Resolver(() => TicketComments)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class TicketsCommentsResolver {
   constructor(
     private readonly ticketCommentsService: TicketsCommentsService,
@@ -27,7 +28,6 @@ export class TicketsCommentsResolver {
   ) {}
 
   @Mutation(() => TicketComments)
-  @UseGuards(JwtAuthGuard, RolesGuard)
   addTicketComment(
     @CurrentUser() user: JwtPayload,
     @Args('createTicketCommentInput')
@@ -37,23 +37,31 @@ export class TicketsCommentsResolver {
   }
 
   @Query(() => [TicketComments], { name: 'ticket_comments' })
-  ticketComments(@Args('ticketId', { type: () => ID }) ticketId: string) {
-    return this.ticketCommentsService.findByTicketId(ticketId);
+  ticketComments(
+    @CurrentUser() user: JwtPayload,
+    @Args('ticketId', { type: () => ID }) ticketId: string,
+  ) {
+    return this.ticketCommentsService.findByTicketId(ticketId, user);
   }
 
   @Mutation(() => TicketComments)
-  removeTicketComment(@Args('id', { type: () => ID }) id: string) {
-    return this.ticketCommentsService.remove(id);
+  removeTicketComment(
+    @CurrentUser() user: JwtPayload,
+    @Args('id', { type: () => ID }) id: string,
+  ) {
+    return this.ticketCommentsService.remove(id, user);
   }
 
   @Mutation(() => TicketComments)
   updateTicketComment(
+    @CurrentUser() user: JwtPayload,
     @Args('updateTicketCommentInput')
     updateTicketCommentInput: UpdateTicketCommentInput,
   ) {
     return this.ticketCommentsService.update(
       updateTicketCommentInput.id,
       updateTicketCommentInput,
+      user,
     );
   }
 

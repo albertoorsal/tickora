@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtPayload } from 'src/common/interfaces/jwt-payload.interface';
 import { CreateTicketHistoryInput } from 'src/modules/ticket_history/dto/create-ticket-history.input';
 import { TicketHistoryService } from 'src/modules/ticket_history/ticket_history.service';
@@ -7,6 +11,7 @@ import { TicketsService } from 'src/modules/tickets/tickets.service';
 import { CreateTicketCommentInput } from 'src/modules/tickets_comments/dto/create-ticket-comment.input';
 import { UpdateTicketCommentInput } from 'src/modules/tickets_comments/dto/update-ticket-comment.input';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { Role } from 'src/modules/users/enums/role';
 
 @Injectable()
 export class TicketsCommentsService {
@@ -25,6 +30,7 @@ export class TicketsCommentsService {
     // Find ticket (must exist before we create a comment against it)
     const ticketFound = await this.ticketService.findOne(
       createTicketCommentInput.ticketId,
+      currentUser,
     );
 
     return this.prisma.$transaction(async (tx) => {
@@ -51,7 +57,9 @@ export class TicketsCommentsService {
     });
   }
 
-  async findByTicketId(ticketId: string) {
+  async findByTicketId(ticketId: string, currentUser: JwtPayload) {
+    await this.ticketService.findOne(ticketId, currentUser);
+
     const commentsTicket = await this.prisma.ticketComment.findMany({
       where: { ticketId },
       orderBy: {
@@ -78,14 +86,33 @@ export class TicketsCommentsService {
     return ticketComment;
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(id: string, currentUser: JwtPayload) {
+    const comment = await this.findOne(id);
+    this.assertCanModify(comment, currentUser);
     return this.prisma.ticketComment.delete({ where: { id } });
   }
 
-  async update(id: string, updateTicketComment: UpdateTicketCommentInput) {
-    await this.findOne(id);
+  async update(
+    id: string,
+    updateTicketComment: UpdateTicketCommentInput,
+    currentUser: JwtPayload,
+  ) {
+    const comment = await this.findOne(id);
+    this.assertCanModify(comment, currentUser);
     const { id: _id, ...data } = updateTicketComment;
     return this.prisma.ticketComment.update({ where: { id }, data });
+  }
+
+  // Only the author or an ADMIN can edit/delete a comment
+  private assertCanModify(
+    comment: { authorId: string },
+    currentUser: JwtPayload,
+  ) {
+    if (
+      comment.authorId !== currentUser.sub &&
+      currentUser.role !== Role.ADMIN
+    ) {
+      throw new ForbiddenException('You can only modify your own comments');
+    }
   }
 }

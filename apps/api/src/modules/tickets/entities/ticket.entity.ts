@@ -44,6 +44,6 @@ export class Ticket {
   @Field(() => User, { nullable: true })
   assignedByUserId?: User;
 
-  @Field()
+  @Field({ nullable: true })
   assignedAt?: Date;
 }

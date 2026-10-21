@@ -13,7 +13,9 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { AssignTicketAgent } from 'src/modules/tickets/dto/assing-ticket-agent.input';
 import { CreateTicketInput } from 'src/modules/tickets/dto/create-ticket.input';
 import { UpdateTicketInput } from 'src/modules/tickets/dto/update-ticket.input';
+import { TicketFilterInput } from 'src/modules/tickets/dto/ticket-filter.input';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
+import { PaginatedTickets } from 'src/modules/tickets/entities/paginated-tickets.entity';
 import { TicketsService } from 'src/modules/tickets/tickets.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../users/enums/role';
@@ -24,6 +26,7 @@ import type { JwtPayload } from 'src/common/interfaces/jwt-payload.interface';
 import { TicketStatus } from 'src/generated/prisma';
 
 @Resolver(() => Ticket)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class TicketsResolver {
   constructor(
     private readonly ticketService: TicketsService,
@@ -32,23 +35,30 @@ export class TicketsResolver {
 
   @Mutation(() => Ticket)
   createTicket(
+    @CurrentUser() user: JwtPayload,
     @Args('createTicketInput') createTicketInput: CreateTicketInput,
   ) {
-    return this.ticketService.create(createTicketInput);
+    return this.ticketService.create(createTicketInput, user);
   }
 
-  @Query(() => [Ticket], { name: 'tickets' })
-  findAll() {
-    return this.ticketService.findAll();
+  @Query(() => PaginatedTickets, { name: 'tickets' })
+  findAll(
+    @CurrentUser() user: JwtPayload,
+    @Args('filter', { type: () => TicketFilterInput, nullable: true })
+    filter: TicketFilterInput = new TicketFilterInput(),
+  ) {
+    return this.ticketService.findAll(filter, user);
   }
 
   @Query(() => Ticket, { name: 'ticket' })
-  findOne(@Args('id', { type: () => ID }) id: string) {
-    return this.ticketService.findOne(id);
+  findOne(
+    @CurrentUser() user: JwtPayload,
+    @Args('id', { type: () => ID }) id: string,
+  ) {
+    return this.ticketService.findOne(id, user);
   }
 
   @Mutation(() => Ticket)
-  @UseGuards(JwtAuthGuard)
   updateTicket(
     @CurrentUser() user: JwtPayload,
     @Args('updateTicketInput') updateTicketInput: UpdateTicketInput,
@@ -61,12 +71,12 @@ export class TicketsResolver {
   }
 
   @Mutation(() => Ticket)
+  @Roles(Role.ADMIN)
   removeTicket(@Args('id', { type: () => ID }) id: string) {
     return this.ticketService.remove(id);
   }
 
   @Mutation(() => Ticket)
-  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.AGENT)
   assignTicket(
     @CurrentUser() user: JwtPayload,
@@ -80,7 +90,6 @@ export class TicketsResolver {
   }
 
   @Mutation(() => Ticket)
-  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.AGENT)
   changeTicketStatus(
     @CurrentUser() user: JwtPayload,
@@ -88,6 +97,11 @@ export class TicketsResolver {
     @Args('newStatus', { type: () => TicketStatus }) newStatus: TicketStatus,
   ) {
     return this.ticketService.changeTicketStatus(id, newStatus, user);
+  }
+
+  @ResolveField(() => User)
+  customer(@Parent() ticket: Ticket) {
+    return this.usersService.findOne(ticket.customerId);
   }
 
   @ResolveField(() => User, { nullable: true })
